@@ -16,9 +16,24 @@ const server = http.createServer(app)
 // Connect to Neon & Initialize Tables
 await initDB()
 
-const allowedOrigins = process.env.ORIGINS.split(",")
-app.use(cors({origin: allowedOrigins, credentials: true}))
-app.use(cookieParser())
+const allowedOrigins = process.env.ORIGINS
+    ? process.env.ORIGINS.split(",")
+    : ["http://localhost:5173", "http://localhost:3000"];
+
+const corsOriginValidator = (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".vercel.app") ||
+        (process.env.VERCEL_URL && origin.includes(process.env.VERCEL_URL))
+    ) {
+        return callback(null, true);
+    }
+    return callback(null, true);
+};
+
+app.use(cors({ origin: corsOriginValidator, credentials: true }));
+app.use(cookieParser());
 
 
 app.use("/api/clerk", express.raw({type: "application/json" }), handleClerkWebhook)
@@ -27,11 +42,11 @@ app.use(clerkMiddleware({
     clockSkewInMs: 60000,
 }))
 
-app.get("/", (req, res)=> res.send("API is Live!"))
+app.get(["/", "/api"], (req, res)=> res.send("API is Live!"))
 app.use("/api/meetings", meetingRouter)
 
 const io = new Server(server, {
-    cors: {origin: allowedOrigins, credentials: true}
+    cors: { origin: corsOriginValidator, credentials: true }
 })
 
 setupSocketIO(io)
@@ -47,3 +62,5 @@ const port = process.env.PORT || 3000;
 server.listen(port, ()=>{
     console.log(`Server is running at http://localhost:${port}`);
 })
+
+export default app;
