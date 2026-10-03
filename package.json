@@ -1,0 +1,15 @@
+{
+  "name": "meetup-app",
+  "version": "1.0.0",
+  "description": "Meetup application",
+  "private": true,
+  "workspaces": [
+    "server"
+  ],
+  "engines": {
+    "node": ">=20.9.0"
+  },
+  "scripts": {
+    "start": "npm --workspace server start"
+  }
+}
