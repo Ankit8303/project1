@@ -1,0 +1,4 @@
+{
+  "provider": "node",
+  "startCommand": "npm start"
+}
