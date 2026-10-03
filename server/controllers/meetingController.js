@@ -70,7 +70,7 @@ export const createMeeting = async (req, res)=>{
         
     } catch (error) {
         console.error("createMeeting failed:", error);
-+        res.status(500).json({ error: "Failed to create meeting" });
+        res.status(500).json({ error: "Failed to create meeting" });
     }
 }
 
@@ -108,7 +108,7 @@ export const getMeeting = async (req, res)=>{
 
     } catch (error) {
         console.error("Fetch Meeting failed:", error);
-+        res.status(500).json({ error: "Failed to fetch meeting" });
+        res.status(500).json({ error: "Failed to fetch meeting" });
     }
 }
 
@@ -128,55 +128,77 @@ export const getUserSessions = async (req, res)=>{
             ORDER BY m.created_at DESC
         `;
 
-    const formattedMeetings = await Promise.all(
-        meetings.map(async (m)=>{
-            const participants = await sql`
-                SELECT mp.*, u.email
-                FROM meeting_participants mp
-                LEFT JOIN users u ON mp.user_id = u.id
-                WHERE mp.meeting_id = ${m.id}
-            `;
+        if (meetings.length === 0) {
+            return res.json({ meetings: [] });
+        }
 
-            const messages = await sql`
-                SELECT id, sender_id, sender_name, text, timestamp
-                FROM meeting_messages
-                WHERE meeting_id = ${m.id}
-                ORDER BY timestamp ASC
-            `;
+        const meetingIds = meetings.map((m) => m.id);
 
-            return {
-                id: m.id,
-                meetingId: m.meeting_id,
-                title: m.title,
-                status: m.status,
-                createdAt: m.created_at,
-                endedAt: m.ended_at,
-                host: {
-                    id: m.host_id,
-                    name: m.host_name,
-                    email: m.host_email,
-                },
-                participants: participants.map((p)=>({
-                    user: p.user_id ? {id: p.user_id, email: p.email } : null,
-                    name: p.name,
-                    joinedAt: p.joined_at,
-                    leftAt: p.left_at,
-                })),
-                messages: messages.map((msg)=>({
-                    id: msg.id,
-                    sender: msg.sender_id,
-                    senderName: msg.sender_name,
-                    text: msg.text,
-                    timestamp: msg.timestamp,
-                }))
+        // Fetch participants for all retrieved meetings in a single query
+        const allParticipants = await sql`
+            SELECT mp.id, mp.meeting_id, mp.user_id, mp.name, mp.joined_at, mp.left_at, u.email
+            FROM meeting_participants mp
+            LEFT JOIN users u ON mp.user_id = u.id
+            WHERE mp.meeting_id = ANY(${meetingIds})
+            ORDER BY mp.joined_at ASC
+        `;
+
+        // Fetch messages for all retrieved meetings in a single query
+        const allMessages = await sql`
+            SELECT id, meeting_id, sender_id, sender_name, text, timestamp
+            FROM meeting_messages
+            WHERE meeting_id = ANY(${meetingIds})
+            ORDER BY timestamp ASC
+        `;
+
+        // Group participants and messages in memory by meeting_id to eliminate N+1 queries
+        const participantsByMeeting = new Map();
+        for (const p of allParticipants) {
+            if (!participantsByMeeting.has(p.meeting_id)) {
+                participantsByMeeting.set(p.meeting_id, []);
             }
-        })
-    )
+            participantsByMeeting.get(p.meeting_id).push({
+                user: p.user_id ? { id: p.user_id, email: p.email } : null,
+                name: p.name,
+                joinedAt: p.joined_at,
+                leftAt: p.left_at,
+            });
+        }
 
-    res.json({meetings: formattedMeetings})
+        const messagesByMeeting = new Map();
+        for (const msg of allMessages) {
+            if (!messagesByMeeting.has(msg.meeting_id)) {
+                messagesByMeeting.set(msg.meeting_id, []);
+            }
+            messagesByMeeting.get(msg.meeting_id).push({
+                id: msg.id,
+                sender: msg.sender_id,
+                senderName: msg.sender_name,
+                text: msg.text,
+                timestamp: msg.timestamp,
+            });
+        }
+
+        const formattedMeetings = meetings.map((m) => ({
+            id: m.id,
+            meetingId: m.meeting_id,
+            title: m.title,
+            status: m.status,
+            createdAt: m.created_at,
+            endedAt: m.ended_at,
+            host: {
+                id: m.host_id,
+                name: m.host_name,
+                email: m.host_email,
+            },
+            participants: participantsByMeeting.get(m.id) || [],
+            messages: messagesByMeeting.get(m.id) || [],
+        }));
+
+        res.json({ meetings: formattedMeetings });
     } catch (error) {
         console.error("get User sessions failed:", error);
-+        res.status(500).json({ error: "Failed to get user sessions" });
+        res.status(500).json({ error: "Failed to get user sessions" });
     }
 }
 
@@ -255,7 +277,7 @@ export const getSessionDetails = async (req, res)=>{
         res.json({ meeting: formattedMeeting });
     } catch (error) {
         console.error("get session details failed:", error);
-+        res.status(500).json({ error: "Failed to get session details" });
+        res.status(500).json({ error: "Failed to get session details" });
     }
 }
 
@@ -284,6 +306,6 @@ export const getMeetingStats = async (req, res)=>{
 
     } catch (error) {
         console.error("get meeting stats failed:", error);
-+        res.status(500).json({ error: "Failed to get meeting stats" });
+        res.status(500).json({ error: "Failed to get meeting stats" });
     }
 }

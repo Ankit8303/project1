@@ -96,7 +96,7 @@ const Dashboard = () => {
               <span className='text-primary'>Built for everyone.</span>
             </h1>
             <p className='text-slate-700 text-base sm:text-lg max-w-xl leading-relaxed'>
-              Connect, collaborate, and celebrate from anywhere with ultra-low latency video, screen sharing, and real-time chat.
+              Connect, collaborate, and celebrate from anywhere with ultra-low latency video, audio, and real-time chat.
             </p>
 
             <div className='flex flex-col sm:flex-row items-stretch sm:items-center gap-4 pt-2'>

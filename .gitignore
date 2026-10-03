@@ -5,6 +5,7 @@ node_modules/
 .env
 .env.*
 .env.local
+!.env.example
 
 # Production build outputs
 dist/
@@ -32,3 +33,4 @@ lerna-debug.log*
 
 # Other
 *.pdf
+.vercel

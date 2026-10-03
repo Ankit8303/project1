@@ -1,7 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { socket } from "../config/socket";
 import toast from "react-hot-toast";
+import { useAuth } from "@clerk/react";
 
+// WebRTC ICE servers configuration.
+// NOTE: Only public Google STUN servers are configured below. STUN discovers public IP/ports,
+// but restrictive networks (symmetric NAT, corporate firewalls) require a TURN relay server.
+// For production-grade connectivity across all networks, configure a TURN server (e.g. Twilio, Coturn, Metered).
 const ICE_SERVERS = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
@@ -10,7 +15,18 @@ const ICE_SERVERS = {
     ],
 };
 
+// TECHNICAL TODO (Screen Sharing):
+// Screen sharing is currently not implemented in this application.
+// To add screen sharing in the future, invoke `navigator.mediaDevices.getDisplayMedia({ video: true })`
+// and replace the video track on each active RTCPeerConnection using `RTCRtpSender.replaceTrack()`.
+
+// TECHNICAL TODO (Production Scalability / SFU Architecture):
+// This application uses peer-to-peer full-mesh WebRTC (every participant connects to every other participant).
+// Full mesh is practical only for small groups (~4-6 peers). Supporting 100 simultaneous participants in production
+// requires transitioning from full mesh to a Selective Forwarding Unit (SFU) architecture (e.g. LiveKit, mediasoup, Janus).
+
 export const useWebRTC = (roomId, user, onMeetingEnded, enabled = true) => {
+    const { getToken } = useAuth();
     const [localStream, setLocalStream] = useState(null);
     const [remoteUsers, setRemoteUsers] = useState([]); // Array of { socketId, userId, userName, stream, audioEnabled, videoEnabled }
     const [audioEnabled, setAudioEnabled] = useState(true);
@@ -121,11 +137,20 @@ export const useWebRTC = (roomId, user, onMeetingEnded, enabled = true) => {
 
             if (!isMounted) return;
 
+            try {
+                const token = await getToken();
+                if (token) {
+                    socket.auth = { token };
+                }
+            } catch (authErr) {
+                console.warn("Failed to get Clerk session token for socket:", authErr);
+            }
+
             if (!socket.connected) {
                 socket.connect();
             }
 
-            // Emit join room
+            // Emit join room (server derives user identity strictly from authenticated token)
             socket.emit("join-room", {
                 roomId,
                 user,

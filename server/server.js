@@ -14,27 +14,52 @@ const app = express();
 const server = http.createServer(app)
 
 // Connect to Neon & Initialize Tables
-await initDB()
+try {
+    await initDB();
+    console.log("Database initialized successfully");
+} catch (dbErr) {
+    console.error("Database initialization failed:", dbErr.message);
+}
 
-const allowedOrigins = process.env.ORIGINS
-    ? process.env.ORIGINS.split(",")
-    : ["http://localhost:5173", "http://localhost:3000"];
+const defaultDevOrigins = ["http://localhost:5173", "http://localhost:3000"];
+
+const configuredOrigins = process.env.ORIGINS
+    ? process.env.ORIGINS.split(",").map((o) => o.trim().replace(/\/+$/, '')).filter(Boolean)
+    : [];
 
 const corsOriginValidator = (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (
-        allowedOrigins.includes(origin) ||
-        origin.endsWith(".vercel.app") ||
-        (process.env.VERCEL_URL && origin.includes(process.env.VERCEL_URL))
-    ) {
+    // Allow requests with no Origin header (health checks, server-to-server requests, curl)
+    if (!origin) {
         return callback(null, true);
     }
-    return callback(null, true);
+
+    const normalizedOrigin = origin.replace(/\/+$/, '');
+
+    // Allow explicitly configured browser origins
+    if (configuredOrigins.includes(normalizedOrigin)) {
+        return callback(null, true);
+    }
+
+    // In development or when no ORIGINS is set, allow default localhost dev origins
+    if (process.env.NODE_ENV !== "production" && defaultDevOrigins.includes(normalizedOrigin)) {
+        return callback(null, true);
+    }
+
+    // Reject unknown browser origins
+    return callback(new Error(`Origin ${origin} not allowed by CORS`));
 };
 
 app.use(cors({ origin: corsOriginValidator, credentials: true }));
 app.use(cookieParser());
 
+// Public health endpoint (does not require Clerk authentication)
+app.get("/health", (_req, res) => {
+    res.status(200).json({
+        status: "ok",
+        service: "meetup-backend",
+        timestamp: new Date().toISOString(),
+    });
+});
 
 app.use("/api/clerk", express.raw({type: "application/json" }), handleClerkWebhook)
 app.use(express.json())
@@ -59,8 +84,8 @@ app.use((err, _req, res, _next)=>{
 
 const port = process.env.PORT || 3000;
 
-server.listen(port, ()=>{
-    console.log(`Server is running at http://localhost:${port}`);
+server.listen(port, "0.0.0.0", () => {
+    console.log(`Server running on port ${port}`);
 })
 
 export default app;
