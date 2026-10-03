@@ -80,11 +80,9 @@ const MeetingRoom = () => {
     navigate("/dashboard")
   }
 
-  const handleEndMeeting = () =>{
+  const handleEndMeeting = () => {
     endMeeting();
-    toast("Meeting ended for all participants");
-    navigate("/dashboard")
-  }
+  };
 
   if(loadingMeeting){
     return <Loader text="Joining meeting room..."/>

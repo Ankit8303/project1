@@ -133,32 +133,14 @@ export const useWebRTC = (roomId, user, onMeetingEnded, enabled = true) => {
         let isMounted = true;
 
         const startSession = async () => {
+            // 1. Initialize local media
             const stream = await initLocalStream();
 
             if (!isMounted) return;
 
-            try {
-                const token = await getToken();
-                if (token) {
-                    socket.auth = { token };
-                }
-            } catch (authErr) {
-                console.warn("Failed to get Clerk session token for socket:", authErr);
-            }
+            // 2. Register all Socket.IO event listeners BEFORE joining the room
 
-            if (!socket.connected) {
-                socket.connect();
-            }
-
-            // Emit join room (server derives user identity strictly from authenticated token)
-            socket.emit("join-room", {
-                roomId,
-                user,
-                audioEnabled: true,
-                videoEnabled: true,
-            });
-
-            // 1. Receive all existing users in room
+            // 2.1 Receive all existing users in room
             socket.on("all-users", (existingUsers) => {
                 existingUsers.forEach((existingUser) => {
                     const peer = createPeerConnection(existingUser.socketId, existingUser);
@@ -177,13 +159,13 @@ export const useWebRTC = (roomId, user, onMeetingEnded, enabled = true) => {
                 });
             });
 
-            // 2. Someone new joined -> add to state
+            // 2.2 Someone new joined -> add to state
             socket.on("user-joined", (newUser) => {
                 toast(`${newUser.userName} joined the meeting`, { icon: "👋" });
                 createPeerConnection(newUser.socketId, newUser);
             });
 
-            // 3. Receive offer from caller
+            // 2.3 Receive offer from caller
             socket.on("offer", async ({ callerSocketId, sdp, callerUser }) => {
                 const peer = createPeerConnection(callerSocketId, callerUser);
                 try {
@@ -201,7 +183,7 @@ export const useWebRTC = (roomId, user, onMeetingEnded, enabled = true) => {
                 }
             });
 
-            // 4. Receive answer from responder
+            // 2.4 Receive answer from responder
             socket.on("answer", async ({ responderSocketId, sdp }) => {
                 const peer = peersRef.current.get(responderSocketId);
                 if (peer) {
@@ -213,7 +195,7 @@ export const useWebRTC = (roomId, user, onMeetingEnded, enabled = true) => {
                 }
             });
 
-            // 5. Receive ICE candidate
+            // 2.5 Receive ICE candidate
             socket.on("ice-candidate", async ({ senderSocketId, candidate }) => {
                 const peer = peersRef.current.get(senderSocketId);
                 if (peer && candidate) {
@@ -225,17 +207,17 @@ export const useWebRTC = (roomId, user, onMeetingEnded, enabled = true) => {
                 }
             });
 
-            // 6. Handle peer audio toggle
+            // 2.6 Handle peer audio toggle
             socket.on("user-toggled-audio", ({ socketId, audioEnabled }) => {
                 setRemoteUsers((prev) => prev.map((u) => (u.socketId === socketId ? { ...u, audioEnabled } : u)));
             });
 
-            // 7. Handle peer video toggle
+            // 2.7 Handle peer video toggle
             socket.on("user-toggled-video", ({ socketId, videoEnabled }) => {
                 setRemoteUsers((prev) => prev.map((u) => (u.socketId === socketId ? { ...u, videoEnabled } : u)));
             });
 
-            // 8. Handle peer left
+            // 2.8 Handle peer left
             socket.on("user-left", ({ socketId, user: leftUser }) => {
                 if (leftUser) {
                     toast(`${leftUser.userName} left the meeting`);
@@ -248,12 +230,40 @@ export const useWebRTC = (roomId, user, onMeetingEnded, enabled = true) => {
                 setRemoteUsers((prev) => prev.filter((u) => u.socketId !== socketId));
             });
 
-            // 9. Handle meeting ended by host
+            // 2.9 Handle meeting ended by host (server authoritative confirmation)
             socket.on("meeting-ended", ({ message }) => {
-                toast.error(message || "This meeting has ended");
+                toast(message || "This meeting has ended", { icon: "👋" });
                 if (onMeetingEnded) {
                     onMeetingEnded(message);
                 }
+            });
+
+            // 2.10 Handle server-side authorization or operation errors
+            socket.on("error-message", ({ message }) => {
+                toast.error(message || "An error occurred");
+            });
+
+            // 3. Obtain Clerk authentication token
+            try {
+                const token = await getToken();
+                if (token) {
+                    // 4. Configure socket authentication
+                    socket.auth = { token };
+                }
+            } catch (authErr) {
+                console.warn("Failed to get Clerk session token for socket:", authErr);
+            }
+
+            // 5. Connect Socket.IO
+            if (!socket.connected) {
+                socket.connect();
+            }
+
+            // 6. Emit join-room AFTER all listeners are active and auth is configured
+            socket.emit("join-room", {
+                roomId,
+                audioEnabled: true,
+                videoEnabled: true,
             });
         };
 
@@ -282,6 +292,7 @@ export const useWebRTC = (roomId, user, onMeetingEnded, enabled = true) => {
             socket.off("user-toggled-video");
             socket.off("user-left");
             socket.off("meeting-ended");
+            socket.off("error-message");
 
             socket.disconnect();
         };
